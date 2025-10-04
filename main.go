@@ -333,35 +333,7 @@ func (sa *ShellAgent) interactiveMode() {
 	}
 }
 
-// demoMode демонстрационный режим с примерами
-func (sa *ShellAgent) demoMode() {
-	queries := []string{
-		"покажи информацию о текущем пользователе",
-		"список всех файлов в текущей папке",
-		"информация о системе и версии ядра",
-	}
 
-	fmt.Println("\n🎯 Демонстрационный режим")
-	fmt.Println(strings.Repeat("=", 60))
-
-	reader := bufio.NewReader(os.Stdin)
-
-	for i, query := range queries {
-		fmt.Printf("\n📝 Запрос %d: %s\n", i+1, query)
-		fmt.Println(strings.Repeat("=", 60))
-
-		sa.intelligentShellAgent(query)
-
-		// Пауза между запросами
-		if i < len(queries)-1 {
-			fmt.Print("\nНажмите Enter для следующего примера...")
-			reader.ReadString('\n')
-		}
-	}
-
-	fmt.Println("\n" + strings.Repeat("=", 60))
-	fmt.Println("✅ Демонстрация завершена!")
-}
 
 // main основная функция
 func main() {
@@ -371,27 +343,7 @@ func main() {
 	fmt.Println(strings.Repeat("=", 60))
 	fmt.Println("Агент преобразует запросы на естественном языке в команды Linux")
 	fmt.Println("и спрашивает разрешение перед выполнением.")
-	fmt.Println("\nВыберите режим работы:")
-	fmt.Println("1. Интерактивный режим (рекомендуется)")
-	fmt.Println("2. Демонстрационный режим")
 	fmt.Println(strings.Repeat("=", 60))
 
-	reader := bufio.NewReader(os.Stdin)
-
-	for {
-		fmt.Print("Введите номер (1 или 2): ")
-		choice, _ := reader.ReadString('\n')
-		choice = strings.TrimSpace(choice)
-
-		switch choice {
-		case "1":
-			agent.interactiveMode()
-			return
-		case "2":
-			agent.demoMode()
-			return
-		default:
-			fmt.Println("Пожалуйста, введите 1 или 2")
-		}
-	}
+	agent.interactiveMode()
 }
