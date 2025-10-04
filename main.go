@@ -338,12 +338,5 @@ func (sa *ShellAgent) interactiveMode() {
 // main основная функция
 func main() {
 	agent := NewShellAgent()
-
-	fmt.Println("🤖 Умный Linux Shell Агент")
-	fmt.Println(strings.Repeat("=", 60))
-	fmt.Println("Агент преобразует запросы на естественном языке в команды Linux")
-	fmt.Println("и спрашивает разрешение перед выполнением.")
-	fmt.Println(strings.Repeat("=", 60))
-
 	agent.interactiveMode()
 }
