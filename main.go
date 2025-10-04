@@ -32,22 +32,35 @@ type OllamaResponse struct {
 	Done     bool   `json:"done"`
 }
 
+// Config структура конфигурации агента
+type Config struct {
+	OllamaURL  string
+	Model      string
+	Timeout    time.Duration
+	MaxHistory int
+}
+
 // ShellAgent основная структура агента
 type ShellAgent struct {
 	commandHistory []CommandHistory
-	ollamaURL      string
-	model          string
+	config         Config
 	client         *http.Client
 }
 
 // NewShellAgent создает новый экземпляр агента
 func NewShellAgent() *ShellAgent {
+	config := Config{
+		OllamaURL:  "http://localhost:11434/api/generate",
+		Model:      "qwen2.5-coder:3b",
+		Timeout:    60 * time.Second,
+		MaxHistory: 30,
+	}
+	
 	return &ShellAgent{
 		commandHistory: make([]CommandHistory, 0),
-		ollamaURL:      "http://localhost:11434/api/generate",
-		model:          "qwen2.5-coder:3b",
+		config:         config,
 		client: &http.Client{
-			Timeout: 60 * time.Second,
+			Timeout: config.Timeout,
 		},
 	}
 }
@@ -94,7 +107,7 @@ func (sa *ShellAgent) naturalLanguageToCommand(query string) (string, error) {
 
 	// Создаем запрос к Ollama
 	reqBody := OllamaRequest{
-		Model:  sa.model,
+		Model:  sa.config.Model,
 		Prompt: prompt,
 		Stream: false,
 	}
@@ -105,11 +118,16 @@ func (sa *ShellAgent) naturalLanguageToCommand(query string) (string, error) {
 	}
 
 	// Отправляем запрос
-	resp, err := sa.client.Post(sa.ollamaURL, "application/json", bytes.NewBuffer(jsonData))
+	resp, err := sa.client.Post(sa.config.OllamaURL, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return "", fmt.Errorf("ошибка запроса к Ollama: %v", err)
 	}
 	defer resp.Body.Close()
+
+	// Проверяем статус ответа
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("Ollama вернул статус %d", resp.StatusCode)
+	}
 
 	// Парсим ответ
 	var ollamaResp OllamaResponse
@@ -137,7 +155,7 @@ func (sa *ShellAgent) runShell(command string) string {
 		return "Пустая команда"
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), sa.config.Timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "bash", "-c", command)
@@ -243,9 +261,9 @@ func (sa *ShellAgent) intelligentShellAgent(query string) string {
 				Result:  result,
 			})
 
-			// Ограничиваем историю последними 10 командами
-			if len(sa.commandHistory) > 10 {
-				sa.commandHistory = sa.commandHistory[len(sa.commandHistory)-10:]
+			// Ограничиваем историю согласно конфигурации
+			if len(sa.commandHistory) > sa.config.MaxHistory {
+				sa.commandHistory = sa.commandHistory[len(sa.commandHistory)-sa.config.MaxHistory:]
 			}
 
 			fmt.Printf("\n📋 Результат:\n%s\n", result)
