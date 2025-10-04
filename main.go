@@ -32,6 +32,18 @@ type OllamaResponse struct {
 	Done     bool   `json:"done"`
 }
 
+// OllamaModel структура для модели Ollama
+type OllamaModel struct {
+	Name       string    `json:"name"`
+	ModifiedAt time.Time `json:"modified_at"`
+	Size       int64     `json:"size"`
+}
+
+// OllamaModelsResponse структура для ответа со списком моделей
+type OllamaModelsResponse struct {
+	Models []OllamaModel `json:"models"`
+}
+
 // Config структура конфигурации агента
 type Config struct {
 	OllamaURL  string
@@ -51,7 +63,7 @@ type ShellAgent struct {
 func NewShellAgent() *ShellAgent {
 	config := Config{
 		OllamaURL:  "http://localhost:11434/api/generate",
-		Model:      "qwen2.5-coder:3b",
+		Model:      "", // Будет выбрана пользователем
 		Timeout:    60 * time.Second,
 		MaxHistory: 30,
 	}
@@ -220,6 +232,82 @@ func (sa *ShellAgent) clearCommandHistory() {
 	fmt.Println("\n🗑️ История команд очищена")
 }
 
+// getAvailableModels получает список доступных моделей Ollama
+func (sa *ShellAgent) getAvailableModels() ([]OllamaModel, error) {
+	modelsURL := "http://localhost:11434/api/tags"
+	
+	resp, err := sa.client.Get(modelsURL)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка подключения к Ollama: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Ollama недоступен (статус %d)", resp.StatusCode)
+	}
+
+	var modelsResp OllamaModelsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&modelsResp); err != nil {
+		return nil, fmt.Errorf("ошибка парсинга списка моделей: %v", err)
+	}
+
+	return modelsResp.Models, nil
+}
+
+// selectModel позволяет пользователю выбрать модель
+func (sa *ShellAgent) selectModel() error {
+	fmt.Println("🔍 Получаю список доступных моделей...")
+	
+	models, err := sa.getAvailableModels()
+	if err != nil {
+		return fmt.Errorf("не удалось получить список моделей: %v", err)
+	}
+
+	if len(models) == 0 {
+		return fmt.Errorf("не найдено доступных моделей Ollama")
+	}
+
+	fmt.Println("\n📋 Доступные модели:")
+	fmt.Println(strings.Repeat("=", 60))
+	
+	for i, model := range models {
+		sizeGB := float64(model.Size) / (1024 * 1024 * 1024)
+		fmt.Printf("%d. %s (%.1f GB)\n", i+1, model.Name, sizeGB)
+	}
+	
+	fmt.Println(strings.Repeat("=", 60))
+
+	reader := bufio.NewReader(os.Stdin)
+	
+	for {
+		fmt.Printf("Выберите модель (1-%d): ", len(models))
+		input, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Printf("❌ Ошибка чтения ввода: %v\n", err)
+			continue
+		}
+
+		input = strings.TrimSpace(input)
+		
+		var choice int
+		if _, err := fmt.Sscanf(input, "%d", &choice); err != nil {
+			fmt.Println("❌ Пожалуйста, введите число")
+			continue
+		}
+
+		if choice < 1 || choice > len(models) {
+			fmt.Printf("❌ Выберите число от 1 до %d\n", len(models))
+			continue
+		}
+
+		selectedModel := models[choice-1]
+		sa.config.Model = selectedModel.Name
+		
+		fmt.Printf("✅ Выбрана модель: %s\n", selectedModel.Name)
+		return nil
+	}
+}
+
 // intelligentShellAgent основная функция агента
 func (sa *ShellAgent) intelligentShellAgent(query string) string {
 	fmt.Printf("\n🔍 Обрабатываю запрос: %s\n", query)
@@ -280,7 +368,7 @@ func (sa *ShellAgent) intelligentShellAgent(query string) string {
 
 // interactiveMode интерактивный режим работы с агентом
 func (sa *ShellAgent) interactiveMode() {
-	fmt.Println("🤖 Умный Linux Shell Агент")
+	fmt.Printf("\n🎯 Используемая модель: %s\n", sa.config.Model)
 	fmt.Println(strings.Repeat("=", 60))
 	fmt.Println("Агент преобразует ваши запросы на естественном языке в команды Linux")
 	fmt.Println("и спрашивает разрешение перед выполнением.")
@@ -295,6 +383,7 @@ func (sa *ShellAgent) interactiveMode() {
 	fmt.Println("\nСпециальные команды:")
 	fmt.Println("- 'история' - показать историю команд")
 	fmt.Println("- 'очистить историю' - очистить контекст")
+	fmt.Println("- 'сменить модель' - выбрать другую модель")
 	fmt.Println(strings.Repeat("=", 60))
 
 	reader := bufio.NewReader(os.Stdin)
@@ -327,6 +416,11 @@ func (sa *ShellAgent) interactiveMode() {
 		} else if lowerQuery == "очистить историю" || lowerQuery == "clear history" || lowerQuery == "очистить контекст" {
 			sa.clearCommandHistory()
 			continue
+		} else if lowerQuery == "сменить модель" || lowerQuery == "change model" || lowerQuery == "выбрать модель" {
+			if err := sa.selectModel(); err != nil {
+				fmt.Printf("❌ Ошибка смены модели: %v\n", err)
+			}
+			continue
 		}
 
 		sa.intelligentShellAgent(query)
@@ -338,5 +432,16 @@ func (sa *ShellAgent) interactiveMode() {
 // main основная функция
 func main() {
 	agent := NewShellAgent()
+	
+	// Выбор модели при старте
+	fmt.Println("🤖 Умный Linux Shell Агент")
+	fmt.Println(strings.Repeat("=", 60))
+	
+	if err := agent.selectModel(); err != nil {
+		fmt.Printf("❌ Ошибка выбора модели: %v\n", err)
+		fmt.Println("Убедитесь, что Ollama запущен и доступен по адресу http://localhost:11434")
+		os.Exit(1)
+	}
+	
 	agent.interactiveMode()
 }
